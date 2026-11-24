@@ -1,0 +1,28 @@
+[project]
+name = "netkit-guard"
+version = "0.1.0"
+description = "Suite de Redes y Seguridad: motor de Subnetting/VLSM, detector de solapamientos y auditor de puertos TCP con asyncio."
+readme = "README.md"
+authors = [
+    { name = "David Garcia Garcia", email = "davidgarcia20.academico@gmail.com" }
+]
+requires-python = ">=3.12"
+dependencies = [
+    "fastapi>=0.165.0",
+    "rich>=15.0.0",
+    "typer>=0.29.2",
+    "uvicorn[standard]>=0.54.0",
+]
+
+[project.scripts]
+netkit = "netkit_guard.main:app"
+
+[build-system]
+requires = ["uv_build>=0.13.9,<0.14.0"]
+build-backend = "uv_build"
+
+[dependency-groups]
+dev = [
+    "httpx>=0.28.1",
+    "pytest>=9.2.0",
+]
