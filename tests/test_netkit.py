@@ -81,3 +81,10 @@ def test_web_api_blocks_public_ssrf_and_returns_security_headers() -> None:
 
     blocked = client.post("/api/v1/audit-ports", json={"host": "8.8.8.8", "ports": [53]})
     assert blocked.status_code == 403
+
+    # Must also block cloud metadata link-local IP (169.254.169.254) against SSRF
+    metadata_blocked = client.post(
+        "/api/v1/audit-ports",
+        json={"host": "169.254.169.254", "ports": [80]},
+    )
+    assert metadata_blocked.status_code == 403

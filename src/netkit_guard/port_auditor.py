@@ -33,6 +33,24 @@ class UnauthorizedTargetError(ValueError):
     """Raised when attempting to audit a non-private host without explicit permission."""
 
 
+RFC1918_NETWORKS = (
+    ipaddress.ip_network("10.0.0.0/8"),
+    ipaddress.ip_network("172.16.0.0/12"),
+    ipaddress.ip_network("192.168.0.0/16"),
+)
+
+
+def _is_safe_internal_ip(ip_obj: ipaddress.IPv4Address | ipaddress.IPv6Address) -> bool:
+    """Allow only loopback or true RFC1918 LAN addresses (blocks 169.254.169.254 metadata & 0.0.0.0)."""
+    if ip_obj.is_unspecified or ip_obj.is_link_local or ip_obj.is_multicast:
+        return False
+    if ip_obj.is_loopback:
+        return True
+    return isinstance(ip_obj, ipaddress.IPv4Address) and any(
+        ip_obj in net for net in RFC1918_NETWORKS
+    )
+
+
 def resolve_and_validate_host(host: str, allow_external: bool = False) -> str:
     """Resolve host to an IP address and enforce private/loopback restriction by default."""
     cleaned = host.strip()
@@ -45,10 +63,10 @@ def resolve_and_validate_host(host: str, allow_external: bool = False) -> str:
     except (OSError, ValueError) as exc:
         raise UnauthorizedTargetError(f"No se pudo resolver el host '{cleaned}': {exc}") from exc
 
-    if not allow_external and not (ip_obj.is_loopback or ip_obj.is_private):
+    if not allow_external and not _is_safe_internal_ip(ip_obj):
         raise UnauthorizedTargetError(
             f"Objetivo '{cleaned}' ({ip_str}) bloqueado por seguridad: solo se permiten "
-            "hosts locales o redes privadas (RFC1918) por defecto."
+            "hosts loopback (127.0.0.0/8) o redes privadas LAN (RFC1918) por defecto."
         )
     return ip_str
 
