@@ -73,6 +73,10 @@ Enlace-WAN:2</textarea>
       const requirements = document.getElementById("vlsm-reqs").value
         .split("\n").map(l => l.trim()).filter(Boolean)
         .map(l => { const [name, h] = l.split(":"); return { name: (name||"").trim(), hosts_needed: Number(h) }; });
+      if (!requirements.length || requirements.some(r => !r.name || !Number.isInteger(r.hosts_needed) || r.hosts_needed < 1)) {
+        out.innerHTML = `<p class="err">Usa el formato Nombre:Hosts con enteros mayores a 0 en cada línea.</p>`;
+        return;
+      }
 
       const res = await fetch("/api/v1/vlsm", {
         method: "POST", headers: {"Content-Type":"application/json"},
