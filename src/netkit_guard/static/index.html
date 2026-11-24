@@ -1,0 +1,118 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>netkit-guard — Subnetting VLSM y Auditoría de Puertos</title>
+  <style>
+    :root { --bg:#0f172a; --surface:#1e293b; --alt:#0b1220; --border:#334155; --text:#f1f5f9; --muted:#94a3b8; --primary:#38bdf8; --ok:#22c55e; --danger:#ef4444; }
+    * { box-sizing:border-box; }
+    body { margin:0; font-family:system-ui,sans-serif; background:var(--bg); color:var(--text); }
+    .wrap { max-width:1100px; margin:0 auto; padding:1.5rem 1.25rem 3rem; }
+    h1 { margin:0 0 0.25rem; }
+    .muted { color:var(--muted); }
+    .grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(320px,1fr)); gap:1rem; margin-top:1.25rem; }
+    .card { background:var(--surface); border:1px solid var(--border); border-radius:12px; padding:1.25rem; }
+    textarea, input { width:100%; background:var(--alt); color:var(--text); border:1px solid var(--border); border-radius:8px; padding:0.6rem; font-family:inherit; margin:0.35rem 0 0.75rem; }
+    button { background:var(--primary); color:#082f49; border:none; border-radius:8px; padding:0.6rem 1rem; font-weight:700; cursor:pointer; }
+    table { width:100%; border-collapse:collapse; margin-top:1rem; font-size:0.88rem; }
+    th, td { text-align:left; padding:0.55rem; border-bottom:1px solid var(--border); }
+    th { color:var(--muted); }
+    .badge { padding:0.15rem 0.5rem; border-radius:999px; font-size:0.75rem; font-weight:700; }
+    .ok { background:rgba(34,197,94,0.18); color:var(--ok); }
+    .high { background:rgba(239,68,68,0.18); color:var(--danger); }
+    .err { color:var(--danger); margin-top:0.5rem; }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <h1>netkit-guard</h1>
+    <p class="muted">Planificador de subredes VLSM, detector de solapamientos CIDR y auditor defensivo de puertos TCP locales.</p>
+
+    <div class="card" style="margin-top:1rem;">
+      <h2>1. Planificador VLSM</h2>
+      <label>Red base CIDR<input id="vlsm-base" value="192.168.10.0/24" /></label>
+      <label>Requisitos (una línea por área: <code>Nombre:Hosts</code>)
+        <textarea id="vlsm-reqs" rows="4">Ventas:50
+TI:25
+Administración:12
+Enlace-WAN:2</textarea>
+      </label>
+      <button id="btn-vlsm">Calcular subredes VLSM</button>
+      <div id="vlsm-out"></div>
+    </div>
+
+    <div class="grid">
+      <div class="card">
+        <h2>2. Detector de solapamientos CIDR</h2>
+        <label>Subredes (una por línea)
+          <textarea id="ov-cidrs" rows="4">10.0.0.0/24
+10.0.0.128/25
+10.0.1.0/24</textarea>
+        </label>
+        <button id="btn-ov">Verificar solapamientos</button>
+        <div id="ov-out"></div>
+      </div>
+
+      <div class="card">
+        <h2>3. Auditor de puertos locales (TCP)</h2>
+        <label>Host local / red privada<input id="port-host" value="127.0.0.1" /></label>
+        <label>Puertos esperados (separados por coma)<input id="port-exp" value="8000" /></label>
+        <button id="btn-audit">Auditar puertos comunes</button>
+        <div id="port-out"></div>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    const esc = (v) => String(v ?? "").replaceAll("&","&amp;").replaceAll("<","&lt;").replaceAll(">","&gt;").replaceAll('"',"&quot;").replaceAll("'","&#39;");
+
+    document.getElementById("btn-vlsm").addEventListener("click", async () => {
+      const out = document.getElementById("vlsm-out");
+      const base_cidr = document.getElementById("vlsm-base").value.trim();
+      const requirements = document.getElementById("vlsm-reqs").value
+        .split("\n").map(l => l.trim()).filter(Boolean)
+        .map(l => { const [name, h] = l.split(":"); return { name: (name||"").trim(), hosts_needed: Number(h) }; });
+
+      const res = await fetch("/api/v1/vlsm", {
+        method: "POST", headers: {"Content-Type":"application/json"},
+        body: JSON.stringify({ base_cidr, requirements }),
+      });
+      const data = await res.json();
+      if (!res.ok) { out.innerHTML = `<p class="err">${esc(data.detail)}</p>`; return; }
+      const rows = data.subnets.map(s => `<tr><td><strong>${esc(s.name)}</strong></td><td>${s.hosts_needed}</td><td>${esc(s.cidr)}</td><td>${esc(s.netmask)}</td><td>${esc(s.first_usable)} — ${esc(s.last_usable)}</td><td>${esc(s.broadcast_address)}</td></tr>`).join("");
+      out.innerHTML = `<p class="muted" style="margin-top:0.75rem;">Uso: <strong>${data.utilization_percent}%</strong> (${data.allocated_addresses} asignadas, ${data.unused_addresses} libres)</p><table><thead><tr><th>Área</th><th>Pedidos</th><th>CIDR</th><th>Máscara</th><th>Rango</th><th>Broadcast</th></tr></thead><tbody>${rows}</tbody></table>`;
+    });
+
+    document.getElementById("btn-ov").addEventListener("click", async () => {
+      const out = document.getElementById("ov-out");
+      const cidrs = document.getElementById("ov-cidrs").value.split("\n").map(l => l.trim()).filter(Boolean);
+      const res = await fetch("/api/v1/overlaps", {
+        method: "POST", headers: {"Content-Type":"application/json"},
+        body: JSON.stringify({ cidrs }),
+      });
+      const data = await res.json();
+      if (!res.ok) { out.innerHTML = `<p class="err">${esc(data.detail)}</p>`; return; }
+      out.innerHTML = data.has_overlaps
+        ? data.overlaps.map(o => `<p class="err">✖ Solapamiento: ${esc(o.network_a)} ↔ ${esc(o.network_b)}</p>`).join("")
+        : `<p style="color:#22c55e;margin-top:0.75rem;">✔ Sin solapamientos.</p>`;
+    });
+
+    document.getElementById("btn-audit").addEventListener("click", async () => {
+      const out = document.getElementById("port-out");
+      const host = document.getElementById("port-host").value.trim();
+      const expected_ports = document.getElementById("port-exp").value.split(",").map(s => Number(s.trim())).filter(n => n > 0);
+      out.innerHTML = `<p class="muted">Auditando...</p>`;
+      const res = await fetch("/api/v1/audit-ports", {
+        method: "POST", headers: {"Content-Type":"application/json"},
+        body: JSON.stringify({ host, expected_ports }),
+      });
+      const data = await res.json();
+      if (!res.ok) { out.innerHTML = `<p class="err">${esc(data.detail)}</p>`; return; }
+      if (!data.open_ports.length) { out.innerHTML = `<p class="muted">Sin puertos abiertos en los puertos comunes.</p>`; return; }
+      const rows = data.open_ports.map(p => `<tr><td>${p.port}</td><td>${esc(p.service)}</td><td><span class="badge ${p.severity === "HIGH" ? "high" : "ok"}">${esc(p.status)}</span></td></tr>`).join("");
+      out.innerHTML = `<table><thead><tr><th>Puerto</th><th>Servicio</th><th>Estado</th></tr></thead><tbody>${rows}</tbody></table>`;
+    });
+  </script>
+</body>
+</html>
